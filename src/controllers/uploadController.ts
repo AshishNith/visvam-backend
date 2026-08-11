@@ -8,7 +8,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET || "",
 });
 
-export const uploadImage = async (req: Request, res: Response): Promise<void> => {
+export const uploadImage = async (req: any, res: Response): Promise<void> => {
   try {
     const file = req.file;
 
