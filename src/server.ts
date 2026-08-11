@@ -5,6 +5,12 @@ import app from "./app.js";
 import { connectDB } from "./config/db.js";
 import { initFirebase } from "./config/firebase.js";
 
+import dns from "node:dns";
+
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {}
+
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;

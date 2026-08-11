@@ -1,9 +1,14 @@
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import dns from "dns";
 import { Product } from "../models/Product.js";
 import { Category } from "../models/Category.js";
 import { User } from "../models/User.js";
+
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {}
 
 dotenv.config();
 
@@ -345,9 +350,13 @@ export async function seedDatabase(customUri?: string) {
   }
 }
 
-// Auto-run if executed directly via CLI
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`) {
-  seedDatabase()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
-}
+// Auto-run when executed directly
+seedDatabase()
+  .then((res) => {
+    console.log(`[Seed Complete] Successfully seeded database with ${res.count} products!`);
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("[Seed Failed]:", err);
+    process.exit(1);
+  });
