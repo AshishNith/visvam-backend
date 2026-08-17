@@ -5,6 +5,8 @@ import dns from "dns";
 import { Product } from "../models/Product.js";
 import { Category } from "../models/Category.js";
 import { User } from "../models/User.js";
+import { seedReviews } from "./seedReviews.js";
+import { seedOrders } from "./seedOrders.js";
 
 try {
   dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -16,7 +18,7 @@ const CDN = "https://res.cloudinary.com/dvwpxb2oa/image/upload/f_auto,q_auto/vis
 
 export const categoriesData = [
   { slug: "gourmet", label: "Gourmet Selection", index: "01", description: "Organic Figs, Medjool Dates, Kishmish, Berries & Superseeds" },
-  { slug: "nuts", label: "Nuts & Kernels", index: "02", description: "California Jumbo Almonds, W240 Cashews, Kashmiri Walnuts & Pistachios" },
+  { slug: "nuts", label: "Nuts & Dried Fruits", index: "02", description: "California Jumbo Almonds, W240 Cashews, Kashmiri Walnuts & Pistachios" },
   { slug: "gifting", label: "Gifting & Hampers", index: "03", description: "Handcrafted Luxury Gift Boxes & Festive Collections" },
 ];
 
@@ -82,7 +84,7 @@ export const productsData = [
     origin: "Anantnag, Kashmir",
     grade: "Snow Light Halves",
     benefits: ["High Omega-3 ALA", "Memory Support", "100% Organic"],
-    bestseller: false,
+    bestseller: true,
     isNew: true,
     isNewProduct: true,
     stock: 90,
@@ -139,16 +141,16 @@ export const productsData = [
     category: "gourmet",
     badge: "High Fiber",
     images: [
-      `${CDN}/05_Dates_Khajoor/DSC00525.jpg`,
-      `${CDN}/05_Dates_Khajoor/DSC00530.jpg`,
-      `${CDN}/05_Dates_Khajoor/DSC00562.jpg`,
+      `${CDN}/05_Dates_Khajoor/DSC00565.jpg`,
+      `${CDN}/05_Dates_Khajoor/DSC00566.jpg`,
+      `${CDN}/05_Dates_Khajoor/DSC00567.jpg`,
     ],
     description: "Hand-strung dried figs harvested from Kandahar orchards. Naturally sun-dried until the natural fruit sugars caramelize into a soft, honey-like center rich in dietary fiber.",
     serving: "500g Pack",
     origin: "Kandahar, Afghanistan",
     grade: "Grade A Garland",
     benefits: ["Digestive Wellness", "Rich Calcium Source", "Natural Sweetener"],
-    bestseller: true,
+    bestseller: false,
     isNew: false,
     isNewProduct: false,
     stock: 110,
@@ -162,15 +164,15 @@ export const productsData = [
     badge: "Organic",
     images: [
       `${CDN}/05_Dates_Khajoor/DSC00525.jpg`,
+      `${CDN}/05_Dates_Khajoor/DSC00526.jpg`,
       `${CDN}/05_Dates_Khajoor/DSC00530.jpg`,
-      `${CDN}/05_Dates_Khajoor/DSC00562.jpg`,
     ],
     description: "Known as the fruit of kings. Abundantly plump, soft, and moist Medjool dates with a rich caramel texture. Perfect as a natural pre-workout energy boost.",
     serving: "500g Box",
     origin: "Jericho Oasis",
     grade: "Super Jumbo",
     benefits: ["Instant Energy Boost", "High Iron", "Zero Additives"],
-    bestseller: true,
+    bestseller: false,
     isNew: false,
     isNewProduct: false,
     stock: 130,
@@ -342,6 +344,12 @@ export async function seedDatabase(customUri?: string) {
       });
       console.log(`[Seed] Created default admin account: ${adminEmail}`);
     }
+
+    // Seed 10-11 Customer Reviews for each product
+    await seedReviews();
+
+    // Seed 48 historical orders across 90 days
+    await seedOrders();
 
     return { success: true, count: insertedProducts.length };
   } catch (error) {
