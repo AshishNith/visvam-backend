@@ -5,39 +5,5 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/visvam_harvest?authSource=admin
     ports:
       - "127.0.0.1:5000:5000"
-    depends_on:
-      mongo:
-        condition: service_healthy
-    networks:
-      - visvam_net
-
-  mongo:
-    image: mongo:7
-    container_name: visvam-backend-mongo
-    restart: unless-stopped
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
-    volumes:
-      - visvam_mongo_data:/data/db
-    # Deliberately no "ports:" mapping here — Mongo is only reachable by the
-    # app container over the internal Docker network, never from the host
-    # or the public internet.
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - visvam_net
-
-networks:
-  visvam_net:
-    driver: bridge
-
-volumes:
-  visvam_mongo_data:
