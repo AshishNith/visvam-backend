@@ -43,28 +43,16 @@ export const initFirebase = (): admin.app.App | null => {
   return firebaseApp;
 };
 
-import jwt from "jsonwebtoken";
-
 export const verifyFirebaseToken = async (idToken: string) => {
-  try {
-    if (admin.apps.length === 0) {
-      initFirebase();
-    }
-    return await admin.auth().verifyIdToken(idToken);
-  } catch (error) {
-    // Development fallback: decode valid client-side Firebase JWT payload safely
-    const decoded = jwt.decode(idToken) as any;
-    if (decoded && (decoded.uid || decoded.user_id) && decoded.email) {
-      return {
-        uid: decoded.uid || decoded.user_id,
-        email: decoded.email,
-        name: decoded.name || decoded.email.split("@")[0],
-        picture: decoded.picture || "",
-        admin: false,
-      };
-    }
-    throw new Error(`Firebase token verification failed: ${(error as Error).message}`);
+  if (admin.apps.length === 0) {
+    initFirebase();
   }
+  // Not passing checkRevoked=true: that flag calls getUser() under the hood,
+  // which needs real Admin SDK service-account credentials
+  // (FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY) — without them every
+  // token verification throws and login fails with 401. Signature and
+  // expiry are still fully verified either way.
+  return await admin.auth().verifyIdToken(idToken);
 };
 
 export { admin };
