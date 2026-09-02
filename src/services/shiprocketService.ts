@@ -15,6 +15,20 @@ let cachedAuthToken: CachedToken | null = null;
 
 const SHIPROCKET_API_BASE = "https://apiv2.shiprocket.in/v1/external";
 
+/**
+ * Shiprocket rejects anything that isn't a bare 10-digit Indian mobile number
+ * with `422 Phone number is in invalid format` — no "+91", no spaces, no
+ * dashes. The checkout field accepts free text (and its placeholder shows
+ * "+91 98765 43210"), so stored numbers arrive in every shape imaginable.
+ * Strip to digits and drop the country/trunk prefix.
+ */
+function toShiprocketPhone(raw?: string): string {
+  const digits = String(raw || "").replace(/\D/g, "");
+  // "919876543210" -> "9876543210"; "09876543210" -> "9876543210"
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  return local.length === 10 ? local : "";
+}
+
 export class ShiprocketService {
   private static getConfig(): ShiprocketAuthConfig {
     return {
@@ -188,7 +202,7 @@ export class ShiprocketService {
       billing_state: order.shippingAddress?.state || "Delhi",
       billing_country: "India",
       billing_email: order.shippingAddress?.email || order.guestEmail || "care@visvam.in",
-      billing_phone: order.shippingAddress?.phone || "9999999999",
+      billing_phone: toShiprocketPhone(order.shippingAddress?.phone) || "9999999999",
       shipping_is_billing: true,
       order_items: order.orderItems.map((item) => ({
         name: item.name,
