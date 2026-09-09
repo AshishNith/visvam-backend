@@ -72,31 +72,82 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     // Sanitize order items and resolve Mongoose ObjectId for product field safely
     const sanitizedOrderItems = [];
     for (const item of orderItems) {
-      let productObjId: mongoose.Types.ObjectId | undefined = undefined;
+      // Always resolve the catalogue product: it gives us the ObjectId AND lets
+      // us guarantee a pack size is stored on every line, whatever the client
+      // sent. A reorder from history or an older cart can arrive with no
+      // variant and no serving, and the order must not be left size-less.
+      let dbProd: any = null;
+      if (item.slug) {
+        dbProd = await Product.findOne({ slug: item.slug });
+      }
+      if (!dbProd && item.product && mongoose.Types.ObjectId.isValid(String(item.product))) {
+        dbProd = await Product.findById(String(item.product));
+      }
 
-      if (item.product && mongoose.Types.ObjectId.isValid(String(item.product))) {
-        productObjId = new mongoose.Types.ObjectId(String(item.product));
-      } else if (item.slug) {
-        const dbProd = await Product.findOne({ slug: item.slug });
-        if (dbProd) {
-          productObjId = dbProd._id as mongoose.Types.ObjectId;
+      const productObjId: mongoose.Types.ObjectId | undefined = dbProd?._id
+        ? (dbProd._id as mongoose.Types.ObjectId)
+        : item.product && mongoose.Types.ObjectId.isValid(String(item.product))
+          ? new mongoose.Types.ObjectId(String(item.product))
+          : undefined;
+
+      // Whatever the client provided, kept as-is when present.
+      let variantTitle = typeof item.variantTitle === "string" ? item.variantTitle : undefined;
+      let variantSku = typeof item.variantSku === "string" ? item.variantSku : undefined;
+      let selectedOptions =
+        item.selectedOptions && typeof item.selectedOptions === "object"
+          ? (item.selectedOptions as Record<string, string>)
+          : undefined;
+      let serving = typeof item.serving === "string" ? item.serving : undefined;
+      // Trusted only as a weight hint for the courier quote, never for price.
+      let weightKg = Number(item.weightKg) > 0 ? Number(item.weightKg) : undefined;
+
+      // Backfill the pack size from the catalogue when the client omitted it.
+      if (dbProd) {
+        const optVal = (opts: any, k: string): string | undefined =>
+          opts instanceof Map ? opts.get(k) : opts?.[k];
+        const variants: any[] = Array.isArray(dbProd.variants) ? dbProd.variants : [];
+        let matched: any =
+          (variantSku && variants.find((v) => v.sku && v.sku === variantSku)) ||
+          (selectedOptions &&
+            Object.keys(selectedOptions).length > 0 &&
+            variants.find(
+              (v) =>
+                v.options &&
+                Object.entries(selectedOptions as Record<string, string>).every(
+                  ([k, val]) => optVal(v.options, k) === val
+                )
+            )) ||
+          null;
+        if (!matched && dbProd.hasVariants && variants.length) {
+          matched = variants.find((v) => v.isDefault) || variants[0];
         }
+        if (matched) {
+          if (!variantTitle && typeof matched.title === "string") variantTitle = matched.title;
+          if (!variantSku && typeof matched.sku === "string") variantSku = matched.sku;
+          if (!selectedOptions && matched.options) {
+            selectedOptions =
+              matched.options instanceof Map
+                ? Object.fromEntries(matched.options)
+                : { ...matched.options };
+          }
+          if (weightKg == null && Number(matched.weightKg) > 0) weightKg = Number(matched.weightKg);
+        }
+        if (!serving && typeof dbProd.serving === "string") serving = dbProd.serving;
+        if (weightKg == null && Number(dbProd.weightKg) > 0) weightKg = Number(dbProd.weightKg);
       }
 
       sanitizedOrderItems.push({
         product: productObjId,
         slug: item.slug || item.product || "product",
-        name: item.name || "Viśvam Item",
+        name: item.name || dbProd?.name || "Viśvam Item",
         qty: Math.max(1, Number(item.qty) || 1),
         price: Number(item.price) || 0,
         image: typeof item.image === "string" ? item.image : (Array.isArray(item.images) ? item.images[0] : "") || "",
-        variantTitle: typeof item.variantTitle === "string" ? item.variantTitle : undefined,
-        variantSku: typeof item.variantSku === "string" ? item.variantSku : undefined,
-        selectedOptions:
-          item.selectedOptions && typeof item.selectedOptions === "object" ? item.selectedOptions : undefined,
-        serving: typeof item.serving === "string" ? item.serving : undefined,
-        // Trusted only as a weight hint for the courier quote, never for price.
-        weightKg: Number(item.weightKg) > 0 ? Number(item.weightKg) : undefined,
+        variantTitle,
+        variantSku,
+        selectedOptions,
+        serving,
+        weightKg,
       });
     }
 
