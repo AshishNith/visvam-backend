@@ -4,6 +4,7 @@ import { Order } from "../models/Order.js";
 import { getRazorpayInstance, isRazorpayConfigured } from "../config/razorpay.js";
 import { ensureShiprocketOrder } from "../services/orderFulfillment.js";
 import { sendOrderConfirmationEmail } from "../services/emailService.js";
+import { assignOrderNumber, normalizeChannel } from "../utils/orderId.js";
 
 // @desc    Create a Razorpay order for an existing Viśvam order
 // @route   POST /api/v1/payments/razorpay/order
@@ -115,6 +116,13 @@ export const verifyRazorpayPayment = async (req: Request, res: Response): Promis
       };
       await order.save();
 
+      // Payment captured — this is the moment a prepaid order earns its master
+      // order number. Idempotent, so the webhook firing for the same payment
+      // hands back this very number rather than minting a second.
+      await assignOrderNumber(order, normalizeChannel(order.channel)).catch((err) =>
+        console.error(`Order number assignment failed for ${String(order._id)}:`, err)
+      );
+
       // Confirmation email goes out on first payment only — never on a retry
       // of an already-paid order. Fire-and-forget.
       sendOrderConfirmationEmail(order).catch((err) =>
@@ -176,6 +184,13 @@ export const razorpayWebhook = async (req: Request, res: Response): Promise<void
           razorpayPaymentId: paymentEntity.id,
         };
         await order.save();
+
+        // Same mint as the /verify path. Razorpay can replay payment.captured,
+        // and assignOrderNumber only ever issues once per order, so a repeat
+        // delivery returns the number already on the order.
+        await assignOrderNumber(order, normalizeChannel(order.channel)).catch((err) =>
+          console.error(`Order number assignment failed for ${String(order._id)}:`, err)
+        );
         // Safety net path too: make sure the paid order reaches Shiprocket and
         // the customer gets a confirmation, in case the browser never returned
         // to call /verify. Pickup orders skip Shiprocket.

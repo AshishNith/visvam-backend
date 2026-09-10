@@ -11,6 +11,7 @@ import { getNumericSetting } from "./settingsController.js";
 import { evaluateCoupon, redeemCoupon } from "./couponController.js";
 import { orderWeightKg } from "../utils/shippingWeight.js";
 import { isPickupEligible } from "../config/pickup.js";
+import { assignOrderNumber, isOrderNumber, normalizeChannel } from "../utils/orderId.js";
 
 // Delivery is quoted live per PIN code by Shiprocket, then waived once the
 // order clears the threshold the storefront advertises ("Free delivery on
@@ -62,11 +63,33 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       paymentMethod,
       guestEmail,
       couponCode: rawCouponCode,
+      idempotencyKey: rawIdempotencyKey,
+      channel: rawChannel,
     } = authReq.body;
 
     if (!orderItems || !Array.isArray(orderItems) || orderItems.length === 0) {
       res.status(400).json({ success: false, message: "No items in order" });
       return;
+    }
+
+    const channel = normalizeChannel(rawChannel);
+    const idempotencyKey =
+      typeof rawIdempotencyKey === "string" && rawIdempotencyKey.trim()
+        ? rawIdempotencyKey.trim().slice(0, 100)
+        : undefined;
+
+    // A double-clicked "Place Order" (or a retry after a flaky response) must
+    // return the order already created, never a second one billed twice.
+    if (idempotencyKey) {
+      const existing = await Order.findOne({ idempotencyKey });
+      if (existing) {
+        res.status(200).json({
+          success: true,
+          message: "Order already placed",
+          data: existing,
+        });
+        return;
+      }
     }
 
     // Sanitize order items and resolve Mongoose ObjectId for product field safely
@@ -251,6 +274,8 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       codFee,
       totalPrice,
       status: "Pending",
+      channel,
+      idempotencyKey,
     });
 
     // Record the redemption now that the order exists. Awaited so the
@@ -287,6 +312,19 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     // prepaid (Razorpay) order is still unpaid here, so its confirmation is
     // sent from paymentController once payment verifies.
     const isPrepaidPending = String(paymentMethod || "").toLowerCase().includes("razorpay");
+
+    // Mint the master order number now for anything that is already confirmed —
+    // COD and pay-on-pickup have no later payment step. A prepaid order stays
+    // unnumbered until Razorpay captures the payment (paymentController), so an
+    // abandoned checkout never burns a number. Must happen before the Shiprocket
+    // push below, which quotes this number as its order reference.
+    if (!isPrepaidPending) {
+      try {
+        await assignOrderNumber(order, channel);
+      } catch (err) {
+        console.error(`Order number assignment failed for ${String(order._id)}:`, err);
+      }
+    }
 
     if (wantsPickup) {
       // Pickup orders never touch Shiprocket — the customer collects in person.
@@ -475,12 +513,16 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
 export const trackOrderById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { orderId } = req.params;
+    const fields = "orderNumber status pickupLane pickupSlot totalPrice createdAt orderItems isPaid";
     let order = null;
 
-    if (orderId && orderId.length === 24) {
-      order = await Order.findById(orderId).select("status pickupLane pickupSlot totalPrice createdAt orderItems isPaid").lean();
-    } else if (orderId) {
-      order = await Order.findOne({ _id: orderId }).select("status pickupLane pickupSlot totalPrice createdAt orderItems isPaid").lean();
+    // Customers quote the VSV number from their confirmation; older orders (and
+    // internal links) still use the Mongo id, so accept either.
+    const query = String(orderId || "").trim();
+    if (isOrderNumber(query)) {
+      order = await Order.findOne({ orderNumber: query.toUpperCase() }).select(fields).lean();
+    } else if (mongoose.Types.ObjectId.isValid(query)) {
+      order = await Order.findById(query).select(fields).lean();
     }
 
     if (!order) {
