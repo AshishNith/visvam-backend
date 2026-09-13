@@ -204,10 +204,9 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       discountAmount = evald.discountAmount;
     }
 
-    // GST is charged on the discounted subtotal; free delivery below is still
-    // judged on the pre-discount `itemsPrice`.
+    // Free delivery below is judged on the pre-discount `itemsPrice`.
     const discountedItems = Math.max(0, itemsPrice - discountAmount);
-    const taxPrice = Number((discountedItems * 0.05).toFixed(2));
+    const taxPrice = 0;
 
     const wantsPickup = String(fulfillmentMethod || "").toLowerCase() === "pickup";
     const deliveryPincode = String(

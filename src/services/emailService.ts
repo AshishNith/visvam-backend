@@ -162,7 +162,7 @@ export function orderConfirmationHtml(order: IOrder): string {
                     isPickup ? "Collection" : "Delivery",
                     isPickup ? "Store pickup" : order.shippingPrice > 0 ? inr(order.shippingPrice) : "Free"
                   )}
-                  ${totalRow("GST (5%)", inr(order.taxPrice))}
+                  ${order.taxPrice > 0 ? totalRow("GST (5%)", inr(order.taxPrice)) : ""}
                   ${order.codFee > 0 ? totalRow("COD handling fee", inr(order.codFee)) : ""}
                   <tr><td colspan="2" style="border-top:1px solid rgba(36,26,18,0.15); padding-top:6px;"></td></tr>
                   ${totalRow(
@@ -259,7 +259,7 @@ function orderConfirmationText(order: IOrder): string {
     isPickup
       ? `Collection: Store pickup`
       : `Delivery: ${order.shippingPrice > 0 ? inr(order.shippingPrice) : "Free"}`,
-    `GST (5%): ${inr(order.taxPrice)}`,
+    order.taxPrice > 0 ? `GST (5%): ${inr(order.taxPrice)}` : ``,
     order.codFee > 0 ? `COD handling fee: ${inr(order.codFee)}` : ``,
     `${isCod ? (isPickup ? "Amount due on collection" : "Amount due on delivery") : "Total paid"}: ${inr(order.totalPrice)}`,
     ``,
