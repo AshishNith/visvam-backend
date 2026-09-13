@@ -48,6 +48,28 @@ async function quoteDeliveryCharge(pincode: string, weightKg: number): Promise<n
   return FALLBACK_DELIVERY_CHARGE;
 }
 
+/**
+ * The live COD collection-fee component Shiprocket quotes for a destination —
+ * from the same cheapest-serviceable-courier lookup `quoteDeliveryCharge` uses,
+ * just with `isCod=true` so the response splits out `codCharges`. This is the
+ * distance-dependent figure the Admin Panel courier picker already shows
+ * ("₹X freight + ₹Y COD"); quoting it live here means the handling fee tracks
+ * real cost by zone instead of one flat rupee figure that undercharges far
+ * zones and overcharges near ones. Falls back to the flat admin-configured
+ * `codHandlingFee` setting when Shiprocket can't be reached or reports nothing
+ * usable, so a lookup failure never blocks checkout.
+ */
+async function quoteCodHandlingFee(pincode: string, weightKg: number): Promise<number> {
+  try {
+    const quote = await ShiprocketService.checkServiceability(pincode, weightKg, true);
+    const codCharges = Number((quote as any)?.availableCouriers?.[0]?.codCharges);
+    if (quote?.success && Number.isFinite(codCharges)) return Math.max(0, Math.ceil(codCharges));
+  } catch (error) {
+    console.error("Shiprocket COD-fee lookup failed, using fallback handling fee:", error);
+  }
+  return getNumericSetting("codHandlingFee");
+}
+
 // @desc    Create new order
 // @route   POST /api/v1/orders
 // @access  Public / Protected
@@ -230,17 +252,24 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     const isCod =
       !wantsPickup && String(paymentMethod || "").toLowerCase().includes("cash");
 
+    const orderWeight = orderWeightKg(sanitizedOrderItems);
+
     const shippingPrice = wantsPickup
       ? 0
       : itemsPrice >= FREE_DELIVERY_THRESHOLD
         ? 0
         : deliveryPincode.length === 6
-          ? await quoteDeliveryCharge(deliveryPincode, orderWeightKg(sanitizedOrderItems))
+          ? await quoteDeliveryCharge(deliveryPincode, orderWeight)
           : FALLBACK_DELIVERY_CHARGE;
 
-    // COD costs more to service, so it carries a surcharge. Deliberately NOT
+    // COD costs more to service, so it carries a surcharge, quoted live per
+    // destination so it tracks the real zone-based cost. Deliberately NOT
     // folded into shippingPrice: a free-delivery order still owes this fee.
-    const codFee = isCod ? await getNumericSetting("codHandlingFee") : 0;
+    const codFee = isCod
+      ? deliveryPincode.length === 6
+        ? await quoteCodHandlingFee(deliveryPincode, orderWeight)
+        : await getNumericSetting("codHandlingFee")
+      : 0;
 
     const totalPrice = Number((discountedItems + taxPrice + shippingPrice + codFee).toFixed(2));
 
