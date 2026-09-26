@@ -526,6 +526,26 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
 
     const updatedOrder = await order.save();
 
+    // A prepaid order only earns its VSV number once payment is confirmed. If
+    // that confirmation never arrived from Razorpay and an admin is marking it
+    // paid by hand, this is that confirmation — give it its number now rather
+    // than leaving it on the short Mongo id. Idempotent for orders that already
+    // have one.
+    if (updatedOrder.isPaid && !updatedOrder.orderNumber) {
+      await assignOrderNumber(updatedOrder, normalizeChannel(updatedOrder.channel)).catch((err) =>
+        console.error(`Order number assignment failed for ${String(updatedOrder._id)}:`, err)
+      );
+
+      // Such a stuck online order also never got its confirmation email or its
+      // Shiprocket push (COD / pay-on-pickup orders got both at placement).
+      if (String(updatedOrder.paymentMethod).toLowerCase().includes("razorpay")) {
+        sendOrderConfirmationEmail(updatedOrder).catch((err) =>
+          console.error(`Order confirmation email failed for ${String(updatedOrder._id)}:`, err)
+        );
+        await ensureShiprocketOrder(updatedOrder);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: updatedOrder,
