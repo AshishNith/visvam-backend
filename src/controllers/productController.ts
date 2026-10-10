@@ -46,7 +46,9 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
     const query: any = {};
 
     if (category) {
-      query.category = category;
+      // The Kitchen category's slug used to be "gourmet". A browser still
+      // running a storefront bundle from before the rename keeps asking for it.
+      query.category = category === "gourmet" ? "kitchen" : category;
     }
 
     if (bestseller === "true") {
