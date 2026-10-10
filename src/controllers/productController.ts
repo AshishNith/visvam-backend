@@ -46,9 +46,12 @@ export const getProducts = async (req: Request, res: Response): Promise<void> =>
     const query: any = {};
 
     if (category) {
-      // The Kitchen category's slug used to be "gourmet". A browser still
-      // running a storefront bundle from before the rename keeps asking for it.
-      query.category = category === "gourmet" ? "kitchen" : category;
+      // The Kitchen category's slug used to be "gourmet". Match both, so the
+      // listing works for a browser still on a storefront bundle from before
+      // the rename, and for any product that scripts/renameGourmetToKitchen.ts
+      // has not moved yet.
+      query.category =
+        category === "kitchen" || category === "gourmet" ? { $in: ["kitchen", "gourmet"] } : category;
     }
 
     if (bestseller === "true") {
